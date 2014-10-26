@@ -1,14 +1,16 @@
 package org.shokai.firmata;
 
-import com.hoho.android.usbserial.driver.*;
+import java.io.IOException;
+import java.util.List;
 
-import java.io.*;
-import java.lang.*;
-import android.hardware.usb.*;
-import android.app.*;
-import android.os.*;
-import android.content.*;
-import android.util.Log;
+import android.content.Context;
+import android.hardware.usb.UsbDeviceConnection;
+import android.hardware.usb.UsbManager;
+
+import com.hoho.android.usbserial.driver.UsbSerialDriver;
+import com.hoho.android.usbserial.driver.UsbSerialPort;
+import com.hoho.android.usbserial.driver.UsbSerialProber;
+import com.hoho.android.usbserial.util.HexDump;
 
 public class ArduinoFirmata{
     public final static String VERSION = "0.2.0";
@@ -34,8 +36,10 @@ public class ArduinoFirmata{
     private final byte START_SYSEX     = (byte)0xF0;
     private final byte END_SYSEX       = (byte)0xF7;
 
-    private UsbSerialDriver usb;
-    private Context context;
+    private UsbSerialDriver usb_driver;
+    private UsbManager usb_manager;
+    private UsbSerialPort usb_port;
+    //private Context context;
     private Thread th_receive = null;
     private ArduinoFirmataEventHandler handler;
     private ArduinoFirmataDataHandler dataHandler;
@@ -57,21 +61,56 @@ public class ArduinoFirmata{
     private int[] analogInputData   = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     private int majorVersion = 0;
     private int minorVersion = 0;
+    
+	public String MsgLog=""; 
+	private int MsgLogCnt =0;
+	
+	public String GetLog(){
+		return MsgLog;
+	}
+
+	public void SetLog(String Msg) {
+		MsgLogCnt++;
+		MsgLog += "\n" + MsgLogCnt + ":" + Msg;
+		if (MsgLogCnt >= 50) {
+			MsgLogCnt = 0;
+			MsgLog = "";
+		}
+	}
+	
     public String getBoardVersion(){
         return String.valueOf(majorVersion)+"."+String.valueOf(minorVersion);
     }
 
     public ArduinoFirmata(android.app.Activity context){
-        this.context = context;
-        UsbManager manager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
-        this.usb = UsbSerialProber.acquire(manager);
+        //this.context = context;
+
+        //this.usb = UsbSerialProber.acquire(manager);
+        this.usb_manager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+        List<UsbSerialDriver> availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(this.usb_manager);
+        if (availableDrivers.isEmpty()) {
+          return;
+        }
+        // Open a connection to the first available driver.
+        this.usb_driver = availableDrivers.get(0);
     }
 
     public void connect() throws IOException, InterruptedException{
-        if(this.usb == null) throw new IOException("device not found");
+        if(this.usb_driver == null) throw new IOException("device not found");
+        
+     // Find all available drivers from attached devices.
+        
+        UsbDeviceConnection connection = this.usb_manager.openDevice(this.usb_driver.getDevice());
+        if (connection == null) {
+          // You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)
+          return;
+        }
+		// Read some data! Most have just one port (port 0).
+		this.usb_port = this.usb_driver.getPorts().get(0);
+        
         try{
-            this.usb.open();
-            this.usb.setBaudRate(57600);
+            this.usb_port.open(connection);
+            this.usb_port.setBaudRate(9600);
             Thread.sleep(3000);
         }
         catch(InterruptedException e){
@@ -86,7 +125,8 @@ public class ArduinoFirmata{
                         while(isOpen()){
                             try{
                                 byte buf[] = new byte[4096];
-                                int size = usb.read(buf, 100);
+                                int size = usb_port.read(buf, 100);
+                                SetLog("Read:"+HexDump.dumpHexString(buf));
                                 if(size > 0){
                                     for(int i = 0; i < size; i++){
                                         processInput(buf[i]);
@@ -107,25 +147,25 @@ public class ArduinoFirmata{
             this.th_receive.start();
         }
 
-        byte[] writeData = {0, 1};
+        
         for (byte i = 0; i < 6; i++) {
-            write((byte)(REPORT_ANALOG | i));
-            write((byte)1);
+        	byte[] writeData = {(byte)(REPORT_ANALOG | i), 1};
+            write(writeData);
         }
         for (byte i = 0; i < 2; i++) {
-            write((byte)(REPORT_DIGITAL | i));
-            write((byte)1);
+        	byte[] writeData = {(byte)(REPORT_DIGITAL | i), 1};
+            write(writeData);
         }
     }
 
     public boolean isOpen(){
-        return this.usb != null;
+        return this.usb_port != null;
     }
 
     public boolean close(){
         try{
-            this.usb.close();
-            this.usb = null;
+            this.usb_port.close();
+            this.usb_port = null;
             return true;
         }
         catch(IOException e){
@@ -136,7 +176,10 @@ public class ArduinoFirmata{
 
     public void write(byte[] writeData){
         try{
-            if(this.isOpen()) this.usb.write(writeData, 100);
+            if(this.isOpen()){ 
+				this.usb_port.write(writeData, 100);
+				SetLog("Write:" + HexDump.dumpHexString(writeData));
+			}
         }
         catch(IOException e){
             this.close();
