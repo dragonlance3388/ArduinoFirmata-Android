@@ -72,7 +72,7 @@ public class ArduinoFirmata{
 	public void SetLog(String Msg) {
 		MsgLogCnt++;
 		MsgLog += "\n" + MsgLogCnt + ":" + Msg;
-		if (MsgLogCnt >= 50) {
+		if (MsgLogCnt >= 10) {
 			MsgLogCnt = 0;
 			MsgLog = "";
 		}
@@ -126,7 +126,7 @@ public class ArduinoFirmata{
                             try{
                                 byte buf[] = new byte[4096];
                                 int size = usb_port.read(buf, 100);
-                                SetLog("Read:"+HexDump.dumpHexString(buf));
+                                //SetLog("Read:"+HexDump.dumpHexString(buf));
                                 if(size > 0){
                                     for(int i = 0; i < size; i++){
                                         processInput(buf[i]);
@@ -152,7 +152,7 @@ public class ArduinoFirmata{
         	byte[] writeData = {(byte)(REPORT_ANALOG | i), 1};
             write(writeData);
         }
-        for (byte i = 0; i < 2; i++) {
+        for (byte i = 0; i < 15; i++) {
         	byte[] writeData = {(byte)(REPORT_DIGITAL | i), 1};
             write(writeData);
         }
